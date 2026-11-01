@@ -1,48 +1,23 @@
-# AMFOT PHP runtime
+# AMFOT: инфраструктура LMS
 
-This repository builds a **runtime-only** Docker image for the AMFOT Laravel 9 application.
+Docker runtime и инструкции для **https://lms.idcg.tj** (Laravel 9 / PHP 8.2 / MySQL 8.4).
 
-**No Laravel application source code, database dumps, credentials, `.env`, `vendor`, or user uploads are stored here or embedded in the image.**
+**Репозиторий и GHCR содержат только инфраструктуру.** Приложение поставляется отдельно архивом, база — SQL-дампом. Исходники Laravel, vendor, .env, ключи, дампы и загрузки остаются на сервере. Не прикладывайте их к issues, PR, Actions artifacts или GitHub Releases.
 
-## Image
+- [Установка и переход с прежней конфигурации](deploy/README.md).
+- [Mini howto: остановка, перезапуск, обновление и проверка](docs/operations.md).
+- [Пароль администратора и смена пароля БД](docs/passwords.md).
+- [Backup и восстановление](docs/backup-restore.md).
+- [SSH, DNS, очередь и диагностика](docs/troubleshooting.md).
 
-`ghcr.io/sirtimon/amfot-php:v1.0.0` after a successful tagged build.
+Runtime ghcr.io/sirtimon/amfot-php включает PHP FPM, Composer, cron, Java и pdftk-java; приложение в образ не копируется. Общий bind mount PHP-контейнеров: /opt/amfot/app. Пользовательские файлы лежат в /opt/amfot/app/storage; отдельного mount /opt/amfot/storage нет.
 
-Runtime includes PHP 8.2 FPM, Composer 2, required PHP extensions, cron, Java, and `pdftk-java`.
+## Сборка и публикация
 
-## Publish
+PR проверяется workflow Validate infrastructure: граница допустимых файлов, Compose, shell/PHP, сборка runtime и Nginx. Реальное приложение и БД для CI не требуются.
 
-Create and push a `v*` git tag (for example `v1.0.0`). The GitHub Actions workflow builds and publishes to GHCR using the repository's built-in `GITHUB_TOKEN`.
+Workflow Publish AMFOT PHP runtime запускается вручную или по тегу v*, публикует только runtime с SHA-тегом и версией для релизных тегов. Используется встроенный GITHUB_TOKEN, приложение не скачивается. Для private GHCR нужен доступ на чтение пакета на сервере.
 
-A manual workflow dispatch is available for test builds, which publish a SHA-based tag. Check **Actions** for successful completion before deploying.
+После изменения Dockerfile дождитесь успешной проверки и публикации, затем закрепите конкретный образ через PHP_IMAGE в серверном .env. **Новая инфраструктура требует runtime с pcntl; старый v1.0.0 нужно проверить или заменить новым SHA-тегом.** Compose pull не собирает новую версию.
 
-Package visibility is configured separately in the GHCR package settings; new packages may be private by default. If private, use `docker login ghcr.io` with a credential allowed to read packages on the destination server.
-
-## Production deployment
-
-For the deployment-only `compose.yaml`, Nginx settings, volume initialization and step-by-step instructions for **https://lms.idcg.tj**, see [deploy/README.md](deploy/README.md). All application sources, database dumps, and uploads stay on the deployment server; the GHCR image contains only the PHP runtime.
-
-## Deployment
-
-Application files reside **only on the deployment server**. Bind-mount them into all PHP containers:
-
-```yaml
-services:
-  app:
-    image: ghcr.io/sirtimon/amfot-php:v1.0.0
-    volumes:
-      - ./app:/var/www/html
-      - ./storage:/var/www/html/storage
-```
-
-Reuse the runtime image for the queue worker and scheduler, with their own commands. Continue to use a separate Nginx container and database. Make sure `vendor/` is installed **locally** using Composer and is accessible to workers.
-
-Create `public/storage -> ../storage/app/public` and `public/scorm -> ../storage/app/scorm` through the deployment initialization service, not in the image; their targets live in bind mounts.
-
-Production tasks (DB import, `APP_KEY`, `.env`, permissions, Laravel queue configuration) remain local to the deployment host.
-
-## Safety
-
-The `.gitignore` also excludes common sensitive content. The workflow never downloads application sources. Do not change the Dockerfile to `COPY app/` or `COPY storage/`.
-
-This runtime is not yet validated against a real running AMFOT installation.
+На тестовом сервере 1 ноября 2026 проверены HTTPS, страница входа, CSS/JS, БД и статус миграций. Обнаружены включённый debug и несовпадение queue timeout/retry_after. Новые изменения требуют отдельной приёмки на тестовом сервере; CI не проверяет бизнес-сценарии.

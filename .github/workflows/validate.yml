@@ -1,0 +1,45 @@
+name: Validate infrastructure
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject application sources, dumps and unexpected image inputs
+        run: |
+          python3 tests/check_repository.py
+          python3 -m unittest discover -s tests -v
+      - name: Validate Compose without real application or credentials
+        env:
+          PHP_IMAGE: ghcr.io/sirtimon/amfot-php:ci-placeholder
+          MYSQL_ROOT_PASSWORD: ci-placeholder-not-a-secret
+          MYSQL_PASSWORD: ci-placeholder-not-a-secret
+        run: docker compose config --quiet
+      - name: Check shell scripts
+        run: |
+          for script in deploy/*.sh; do sh -n "$script"; done
+          shellcheck deploy/*.sh
+      - uses: docker/setup-buildx-action@v3
+      - name: Build runtime locally; never publish or mount the application
+        run: docker build -f docker/php/Dockerfile -t amfot-runtime:test .
+      - name: PHP lint and required runtime extensions
+        run: |
+          for script in deploy/*.php; do
+            docker run --rm -v "$PWD/deploy:/checks:ro" amfot-runtime:test php -l "/checks/$(basename "$script")"
+          done
+          docker run --rm amfot-runtime:test php -r 'foreach (["pdo_mysql", "mbstring", "gd", "intl", "zip", "pcntl"] as $e) { if (!extension_loaded($e)) { fwrite(STDERR, "$e missing\n"); exit(1); } }'
+      - name: Validate nginx with a disposable upstream
+        run: |
+          docker network create amfot-ci
+          trap 'docker rm -f amfot-ci-upstream >/dev/null 2>&1; docker network rm amfot-ci >/dev/null 2>&1' EXIT
+          docker run -d --name amfot-ci-upstream --network amfot-ci --network-alias app amfot-runtime:test
+          docker run --rm --network amfot-ci -v "$PWD/deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro" nginx:1.28-alpine nginx -t
