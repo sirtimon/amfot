@@ -3,6 +3,8 @@ name: Publish AMFOT PHP runtime
 on:
   workflow_dispatch:
   push:
+    branches: [main]
+    paths: [runtime-version.txt]
     tags:
       - 'v*'
 
@@ -10,8 +12,18 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: runtime-release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  validate:
+    uses: ./.github/workflows/validate.yml
   publish:
+    needs: validate
+    permissions:
+      contents: write
+      packages: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,15 +36,36 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Release version
+        id: version
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then
+            version="$GITHUB_REF_NAME"
+          elif [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/main ]]; then
+            version="$(cat runtime-version.txt)"
+            if git ls-remote --exit-code --tags origin "refs/tags/$version" >/dev/null 2>&1; then
+              echo "Refusing to overwrite existing release tag" >&2
+              exit 1
+            fi
+          else
+            version=""
+          fi
+          if [[ -n "$version" && ! "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid release version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
       - name: Image metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/sirtimon/amfot-php
           tags: |
-            type=ref,event=tag
+            type=raw,value=${{ steps.version.outputs.version }},enable=${{ steps.version.outputs.version != '' }}
             type=sha
       - name: Build and publish
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -43,3 +76,14 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Create GitHub release after successful image publication
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          gh release create "$VERSION" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "AMFOT PHP runtime $VERSION" \
+            --notes "Runtime-only image: ghcr.io/sirtimon/amfot-php:$VERSION. Digest: $IMAGE_DIGEST. Includes pcntl and deployment checks. No application sources, database dumps or credentials are included."

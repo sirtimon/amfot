@@ -6,7 +6,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 EXACT = {
-    '.gitignore', '.gitattributes', '.dockerignore', 'README.md', 'compose.yaml',
+    '.gitignore', '.gitattributes', '.dockerignore', 'README.md', 'compose.yaml', 'runtime-version.txt',
     'deploy/.env.example', 'deploy/README.md', 'deploy/init-storage.sh',
     'deploy/nginx.conf', 'deploy/worker.sh', 'deploy/check.sh',
     'deploy/check-runtime.php', 'deploy/admin-password.php',
