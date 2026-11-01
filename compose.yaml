@@ -1,13 +1,23 @@
 name: amfot
 
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 x-php-common: &php-common
-  image: ghcr.io/sirtimon/amfot-php:v1.0.0
+  image: ${PHP_IMAGE:?set a verified runtime with pcntl in .env}
   working_dir: /var/www/html
   restart: unless-stopped
-  env_file:
-    - ./app/.env
+  logging: *logging
+  # Laravel reads its mounted .env (or config cache), including under cron.
+  # Do not inject a second, stale copy of application secrets into containers.
+  environment:
+    QUEUE_WORKER_TIMEOUT: ${QUEUE_WORKER_TIMEOUT:-60}
   volumes:
     - ./app:/var/www/html
+    - ./deploy:/opt/amfot:ro
   networks: [internal]
   depends_on:
     db:
@@ -17,33 +27,49 @@ x-php-common: &php-common
 
 services:
   init:
-    image: ghcr.io/sirtimon/amfot-php:v1.0.0
+    image: ${PHP_IMAGE:?set a verified runtime with pcntl in .env}
     working_dir: /var/www/html
     restart: "no"
+    logging: *logging
     command: ["sh", "/opt/amfot/init-storage.sh"]
     volumes:
       - ./app:/var/www/html
-        - ./deploy/init-storage.sh:/opt/amfot/init-storage.sh:ro
+      - ./deploy/init-storage.sh:/opt/amfot/init-storage.sh:ro
     networks: [internal]
 
   nginx:
     image: nginx:1.28-alpine
     restart: unless-stopped
+    logging: *logging
     ports:
       - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8080}:80"
     volumes:
       - ./app:/var/www/html:ro
-        - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on: [app]
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     networks: [internal]
 
   app:
     <<: *php-common
     command: ["php-fpm", "-F"]
+    healthcheck:
+      test: ["CMD", "su", "-s", "/bin/sh", "www-data", "-c", "php /opt/amfot/check-runtime.php"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
 
   worker:
     <<: *php-common
-    command: ["php", "artisan", "queue:work", "database", "--queue=default", "--sleep=3", "--tries=3", "--timeout=300", "--max-time=3600", "--memory=256"]
+    user: www-data
+    command: ["sh", "/opt/amfot/worker.sh"]
     stop_grace_period: 360s
 
   scheduler:
@@ -53,6 +79,7 @@ services:
   db:
     image: mysql:8.4
     restart: unless-stopped
+    logging: *logging
     environment:
       MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?set in .env}"
       MYSQL_DATABASE: amfot

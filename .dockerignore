@@ -1,0 +1,7 @@
+# Allowlist: the build context must contain only PHP runtime infrastructure.
+**
+!docker/
+!docker/php/
+!docker/php/Dockerfile
+!docker/php/production.ini
+!docker/php/scheduler.cron
