@@ -1,0 +1,16 @@
+# No application code or local data in this repository
+.env
+.env.*
+!.env.example
+app/
+storage/
+vendor/
+node_modules/
+*.sql
+*.sql.gz
+*.sql.zip
+*.zip
+*.tar
+*.tar.gz
+*.key
+*.pem
