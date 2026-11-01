@@ -1,7 +1,7 @@
 #!/bin/sh
 # Run from the deployment checkout; safe output suitable for diagnostics.
 set -eu
-cd "$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)"
+cd "$(CDPATH='' cd -- "$(dirname -- "$0")/.." && pwd)"
 docker compose config --quiet
 docker compose ps -a
 docker compose exec -T --user www-data app php /opt/amfot/check-runtime.php
