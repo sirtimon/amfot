@@ -12,7 +12,7 @@ EXACT = {
     'deploy/check-runtime.php', 'deploy/admin-password.php',
     'docker/php/Dockerfile', 'docker/php/production.ini', 'docker/php/scheduler.cron',
     '.github/workflows/publish.yml', '.github/workflows/validate.yml',
-    'tests/check_repository.py', 'tests/test_repository.py',
+    'tests/check_repository.py', 'tests/test_repository.py', 'tests/test_healthcheck.py',
 }
 
 
