@@ -18,6 +18,10 @@ A manual workflow dispatch is available for test builds, which publish a SHA-bas
 
 Package visibility is configured separately in the GHCR package settings; new packages may be private by default. If private, use `docker login ghcr.io` with a credential allowed to read packages on the destination server.
 
+## Production deployment
+
+For the deployment-only `compose.yaml`, Nginx settings, volume initialization and step-by-step instructions for **https://lms.idcg.tj**, see [deploy/README.md](deploy/README.md). All application sources, database dumps, and uploads stay on the deployment server; the GHCR image contains only the PHP runtime.
+
 ## Deployment
 
 Application files reside **only on the deployment server**. Bind-mount them into all PHP containers:
