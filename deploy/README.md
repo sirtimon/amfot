@@ -8,16 +8,16 @@
 git clone https://github.com/sirtimon/amfot.git /opt/amfot
 cd /opt/amfot
 cp deploy/.env.example .env
-mkdir -p storage
+mkdir -p app storage
 ```
 
-Положить **полный релиз Laravel** непосредственно в `/opt/amfot` (файл `artisan` должен быть `/opt/amfot/artisan`; стандартная папка `/opt/amfot/app` содержит PHP-классы Laravel). Перенести **оригинальную папку storage** в `/opt/amfot/storage` (так, чтобы были `storage/app/public`, `storage/app/scorm`, `storage/framework`). **Не копировать пользовательские данные в GitHub.** SQL-дамп держать вне репозитория, например `/root/20261030_amfot.sql`.
+Положить **полный релиз Laravel** в `/opt/amfot/app` (файл `artisan` должен быть `/opt/amfot/app/artisan`, а PHP-классы Laravel — в `/opt/amfot/app/app`). Перенести **оригинальную папку storage** в `/opt/amfot/storage` (так, чтобы были `storage/app/public`, `storage/app/scorm`, `storage/framework`). **Не копировать пользовательские данные в GitHub.** SQL-дамп держать вне репозитория, например `/root/20261030_amfot.sql`.
 
-В `/opt/amfot/.env` установить надёжные `MYSQL_ROOT_PASSWORD` и `MYSQL_PASSWORD`. Этот же файл содержит `APP_*`, `DB_*`, `QUEUE_*` и прочие настройки Laravel. Следите, чтобы `DB_PASSWORD` совпадал с `MYSQL_PASSWORD`. Установить `HTTP_BIND` в адрес интерфейса Docker-сервера, доступный **только** reverse proxy. При проксировании на localhost оставить `127.0.0.1`. Если proxy на другом хосте — указать приватный IP Docker-хоста и ограничить порт 8080 firewall'ом.
+В `/opt/amfot/.env` установить надёжные `MYSQL_ROOT_PASSWORD` и `MYSQL_PASSWORD`. В `/opt/amfot/app/.env` указать совпадающий `DB_PASSWORD` и параметры Laravel. Установить `HTTP_BIND` в адрес интерфейса Docker-сервера, доступный **только** reverse proxy. При проксировании на localhost оставить `127.0.0.1`. Если proxy на другом хосте — указать приватный IP Docker-хоста и ограничить порт 8080 firewall'ом.
 
 ## 2. Настроить Laravel
 
-Используется **единый** `/opt/amfot/.env` для Compose и Laravel. Не создавайте `app/.env`. Дополните корневой `.env` настройками приложения из оригинального `.env.example`:
+Используются два файла: `/opt/amfot/.env` для Compose (MYSQL_PASSWORD, HTTP_BIND и др.) и `/opt/amfot/app/.env` для Laravel (APP_URL, DB_HOST, QUEUE_CONNECTION и др.). Создайте `app/.env` из Laravel `.env.example` и заполните параметры:
 
 
 ```dotenv
@@ -35,7 +35,7 @@ QUEUE_CONNECTION=database
 QUEUE_RETRY_AFTER=360
 ```
 
-Сохранить остальные необходимые настройки из инструкции разработчиков (MAIL_*, Google Calendar OAuth, `APP_TZ` и т. д.). Laravel должен доверять заголовкам `X-Forwarded-Proto` **только от внешнего reverse proxy** (TrustProxies). Не публиковать `.env` в GitHub.
+Сохранить остальные необходимые настройки из инструкции разработчиков (MAIL_*, Google Calendar OAuth, `APP_TZ` и т. д.). Laravel должен доверять заголовкам `X-Forwarded-Proto` **только от внешнего reverse proxy** (TrustProxies). Не публиковать оба `.env` в GitHub.
 
 ## 3. Запустить БД, установить зависимости, импортировать дамп
 
@@ -46,7 +46,7 @@ docker compose run --rm --no-deps init
 docker compose run --rm --no-deps app composer install --no-dev --prefer-dist --optimize-autoloader --no-interaction
 ```
 
-Composer выполняется на локальном сервере; исходники приложения не передаются в GHCR. При необходимости выдайте права на запись в `vendor`, `storage`, `bootstrap/cache` пользователю контейнера (`www-data`, UID 33).
+Composer выполняется на локальном сервере; исходники приложения не передаются в GHCR. При необходимости выдайте права на запись в `app/vendor`, `storage`, `app/bootstrap/cache` пользователю контейнера (`www-data`, UID 33).
 
 Проверить структуру SQL до импорта (`CREATE DATABASE`, `USE`, `DEFINER`, кодировки). **Первый импорт выполнять только в пустую БД после резервной копии**. Если дамп содержит таблицы, например `migrations`, не запускать миграции вслепую:
 
