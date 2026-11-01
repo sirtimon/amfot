@@ -1,0 +1,80 @@
+name: amfot
+
+x-php-common: &php-common
+  image: ghcr.io/sirtimon/amfot-php:sha-56a4f4d
+  working_dir: /var/www/html
+  restart: unless-stopped
+  env_file:
+    - ./app/.env
+  volumes:
+    - ./app:/var/www/html
+    - ./storage:/var/www/html/storage
+  networks: [internal]
+  depends_on:
+    db:
+      condition: service_healthy
+    init:
+      condition: service_completed_successfully
+
+services:
+  init:
+    image: ghcr.io/sirtimon/amfot-php:sha-56a4f4d
+    working_dir: /var/www/html
+    restart: "no"
+    command: ["sh", "/opt/amfot/init-storage.sh"]
+    volumes:
+      - ./app:/var/www/html
+      - ./storage:/var/www/html/storage
+      - ./deploy/init-storage.sh:/opt/amfot/init-storage.sh:ro
+    networks: [internal]
+
+  nginx:
+    image: nginx:1.28-alpine
+    restart: unless-stopped
+    ports:
+      - "${HTTP_BIND:-127.0.0.1}:${HTTP_PORT:-8080}:80"
+    volumes:
+      - ./app:/var/www/html:ro
+      - ./storage:/var/www/html/storage:ro
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on: [app]
+    networks: [internal]
+
+  app:
+    <<: *php-common
+    command: ["php-fpm", "-F"]
+
+  worker:
+    <<: *php-common
+    command: ["php", "artisan", "queue:work", "database", "--queue=default", "--sleep=3", "--tries=3", "--timeout=300", "--max-time=3600", "--memory=256"]
+    stop_grace_period: 360s
+
+  scheduler:
+    <<: *php-common
+    command: ["cron", "-f"]
+
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?set in .env}"
+      MYSQL_DATABASE: amfot
+      MYSQL_USER: amfot
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?set in .env}"
+    command: ["mysqld", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", 'MYSQL_PWD="$$MYSQL_ROOT_PASSWORD" mysqladmin ping -h 127.0.0.1 -u root --silent']
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    networks: [internal]
+
+volumes:
+  mysql_data:
+
+networks:
+  internal:
+    driver: bridge
